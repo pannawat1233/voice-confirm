@@ -1,0 +1,26 @@
+.data-mapping-card .data-mapping-section {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.data-mapping-card .data-mapping-section + .data-mapping-section {
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.data-mapping-card .data-mapping-section > :is(h2, p, .csv-preview) {
+  margin: 0;
+}
+
+.data-mapping-card .data-mapping-section > .button {
+  justify-self: start;
+}
+
+@media (max-width: 600px) {
+  .data-mapping-card .data-mapping-section + .data-mapping-section {
+    margin-top: 24px;
+    padding-top: 24px;
+  }
+}

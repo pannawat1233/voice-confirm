@@ -6,6 +6,7 @@ import { useAgentDetail } from '../hooks/useBotnoiData';
 import { getDraft, saveDraft, type CampaignDraft } from '../lib/campaigns';
 import { campaignBindings, prepareCampaignRows, type VariableBinding } from '../../shared/campaign-inputs.mjs';
 import { routes } from '../routes';
+import './DataMappingPage.css';
 
 export function DataMappingPage() {
   const [draft, setDraft] = useState(getDraft);
@@ -40,9 +41,12 @@ export function DataMappingPage() {
       <section className="wizard-agent-banner"><div><h2>{detail.agent?.bot_name || draft.agentId}</h2><p>{draft.fileName} · {draft.csv.rows.length.toLocaleString()} รายชื่อ</p></div><div className="draft-actions"><Button href={routes.createCampaign} variant="secondary" size="compact">เปลี่ยนไฟล์ CSV</Button><Button href={routes.apiAgent} variant="secondary" size="compact">เปลี่ยน Agent</Button></div></section>
       {detail.loading && <p role="status">กำลังอ่านตัวแปร Agent…</p>}
       {detail.error && <div role="alert" className="workspace-alert">{detail.error}<Button onClick={detail.refetch}>ลองใหม่</Button></div>}
-      {ready && <section className="wizard-summary-card">
-        <h2>1. เบอร์ปลายทาง</h2><label className="campaign-form__field"><span>คอลัมน์เบอร์โทร</span><select className="workspace-select" value={phoneColumn} disabled={saving} onChange={e => { setPhoneColumn(e.target.value); setMessage(''); }}><option value="">เลือกคอลัมน์</option>{draft.csv.headers.map(h => <option key={h}>{h}</option>)}</select></label>
-        <h2>2. ข้อมูลที่ Agent ใช้</h2><p className="workspace-note">เลือกคอลัมน์ให้แต่ละตัวแปร คอลัมน์เดียวใช้ได้หลายตัวแปร เช่น เบอร์ปลายทางและ phone_number</p>
+      {ready && <section className="wizard-summary-card data-mapping-card" aria-label="จับคู่ข้อมูล">
+        <section className="data-mapping-section" aria-labelledby="mapping-phone-title">
+          <h2 id="mapping-phone-title">1. เบอร์ปลายทาง</h2><label className="campaign-form__field"><span>คอลัมน์เบอร์โทร</span><select className="workspace-select" value={phoneColumn} disabled={saving} onChange={e => { setPhoneColumn(e.target.value); setMessage(''); }}><option value="">เลือกคอลัมน์</option>{draft.csv.headers.map(h => <option key={h}>{h}</option>)}</select></label>
+        </section>
+        <section className="data-mapping-section" aria-labelledby="mapping-agent-title">
+        <h2 id="mapping-agent-title">2. ข้อมูลที่ Agent ใช้</h2><p className="workspace-note">เลือกคอลัมน์ให้แต่ละตัวแปร คอลัมน์เดียวใช้ได้หลายตัวแปร เช่น เบอร์ปลายทางและ phone_number</p>
         <p className="workspace-note">หากตัวแปรใช้บันทึกคำตอบหลังสนทนา ให้เลือก “ผลลัพธ์หลังโทร” ระบบจะไม่บังคับข้อมูลนั้นใน CSV และไม่ส่งค่าเริ่มต้นแทนคุณ</p>
         <div className="csv-preview"><table><thead><tr><th>ตัวแปร Agent</th><th>แหล่งข้อมูล</th><th>ตัวอย่างแถวแรก</th></tr></thead><tbody>{detail.variables.map(variable => {
           const binding = bindings[variable];
@@ -50,6 +54,7 @@ export function DataMappingPage() {
         })}</tbody></table></div>
         {!detail.variables.length && <p>Agent นี้ไม่มีตัวแปรใน Prompt ใช้เฉพาะเบอร์ปลายทาง</p>}
         <Button variant="secondary" size="compact" onClick={template}>ดาวน์โหลดหัวตาราง CSV สำหรับ Agent นี้</Button>
+        </section>
       </section>}
       {ready && <section className="wizard-summary-card"><h2>ตรวจครบทุกแถว</h2><p>ข้อมูลครบ {prepared.errors.length ? 0 : prepared.rows.length - invalid.length} / {prepared.rows.length} รายชื่อ</p>{prepared.errors.map(e => <p key={e} className="workspace-alert">{e}</p>)}{invalid.slice(0,20).map(r => <p key={r.index} className="workspace-alert">แถว {r.index + 1}: {r.errors.join(' · ')}</p>)}{invalid.length > 20 && <p>และอีก {invalid.length - 20} แถวที่ข้อมูลไม่ครบ</p>}<p className="workspace-note">บันทึกฉบับร่างได้ แต่จะเริ่มโทรทั้งแคมเปญได้เมื่อข้อมูลครบทุกแถว</p></section>}
       {error && <p role="alert" className="workspace-alert">{error}</p>}{message && <p role="status">{message}</p>}
