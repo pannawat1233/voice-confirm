@@ -6,15 +6,17 @@ import { getCampaigns } from '../lib/campaigns';
 import { supabase } from '../lib/supabase';
 import { routes } from '../routes';
 import { effectiveOutcome, outcomeLabels, type Outcome } from '../../shared/call-results.mjs';
+import { callResultDisplay, talkDuration } from '../../shared/call-display.mjs';
 
 type Attempt = {
   id: string; call_id: string | null; destination: string; status: string; created_at: string;
   metadata: { campaign_id?: string; campaign_name?: string; contact_row?: number; variables?: Record<string,string> };
-  response: { review?: Outcome; callback?: { outcome: Outcome }; followup?: { outcome: Outcome } } | null;
+  response: { review?: Outcome; callback?: { outcome: Outcome }; followup?: { outcome: Outcome; answered_at?: string | null; completed_at?: string | null } } | null;
 };
 const labels: Record<string,string> = { completed:'จบสาย',queued:'เข้าคิว',ringing:'กำลังเรียกสาย','in-progress':'กำลังสนทนา',failed:'โทรไม่สำเร็จ',busy:'สายไม่ว่าง','no-answer':'ไม่รับสาย',cancelled:'ยกเลิก',canceled:'ยกเลิก',unknown:'รอตรวจสอบ',submitting:'กำลังส่งคำขอ' };
 const displayDate = (value:string) => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('th-TH',{timeZone:'Asia/Bangkok',dateStyle:'medium',timeStyle:'short'}) : '—';
 const sourceLabel = (value:string) => value==='manual'?'ผู้ใช้ตรวจและบันทึก':value==='agent_tool'?'Agent ส่งผลผ่าน Tool':value==='provider'?'ผลจากบริการ Voice Bot':'ยังไม่มีผลตอบรับ';
+const displayLabels: Record<string,string> = { ...outcomeLabels, ENDED_WITHOUT_RESULT:'ตัดสาย' };
 const PAGE_SIZE=10;
 
 export function DashboardOverviewPage() {
@@ -63,13 +65,13 @@ function CampaignOverview({campaignId,days}:{campaignId:string;days:number}) {
     window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
     return()=>{active=false;window.clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
   },[campaignId,days,revision]);
-  const counts=Object.fromEntries(Object.keys(outcomeLabels).map(key=>[key,items.filter(a=>effectiveOutcome(a.response).call_result===key).length]));
+  const counts=Object.fromEntries(Object.keys(displayLabels).map(key=>[key,items.filter(a=>callResultDisplay(a).key===key).length]));
   const needingAgent=items.filter(a=>effectiveOutcome(a.response).needs_agent===true).length;
-  const visible=items.filter(a=>filter==='all'||effectiveOutcome(a.response).call_result===filter);
+  const visible=items.filter(a=>filter==='all'||callResultDisplay(a).key===filter);
   const pages=Math.max(1,Math.ceil(visible.length/PAGE_SIZE));
   useEffect(()=>setPage(p=>Math.min(p,pages-1)),[pages]);
   const value=(n:number)=>!updatedAt?'—':n.toLocaleString('th-TH');
-  const colors:Record<string,string>={CONFIRMED:'#0db98a',DECLINED:'#f04452',CALLBACK_REQUESTED:'#edaa36',REQUEST_AGENT:'#7451e8',WRONG_PERSON:'#5873a5',NO_ANSWER:'#b0a4cd',UNDETERMINED:'#c5c7d4'};
+  const colors:Record<string,string>={CONFIRMED:'#0db98a',DECLINED:'#f04452',CALLBACK_REQUESTED:'#edaa36',REQUEST_AGENT:'#7451e8',WRONG_PERSON:'#5873a5',NO_ANSWER:'#b0a4cd',UNDETERMINED:'#c5c7d4',ENDED_WITHOUT_RESULT:'#8490a5'};
   let angle=0;
   const segments=Object.entries(counts).filter(([,count])=>count>0).map(([key,count])=>{const start=angle;angle+=count/items.length*360;return `${colors[key]} ${start}deg ${angle}deg`;});
   return <>
@@ -83,14 +85,14 @@ function CampaignOverview({campaignId,days}:{campaignId:string;days:number}) {
     </section>
     <p className="workspace-note">ยอดสรุปและกราฟนับทุกคำขอโทรตามตัวกรอง รวมการโทรซ้ำและแคมเปญเวอร์ชันก่อนหน้า ผลล่าสุดต่อคนดูได้ในหน้าแคมเปญ</p>
     <section className="dashboard-visuals" aria-label="ผลตอบรับแคมเปญ">
-      <article className="response-card report-response"><h2>ผลตอบรับจากการโทร</h2><div className="report-donut" role="img" aria-label={updatedAt?Object.entries(counts).map(([key,count])=>`${outcomeLabels[key]} ${count}`).join(', '):'ยังไม่มีข้อมูล'} style={{background:segments.length?`conic-gradient(${segments.join(', ')})`:'#e6e7ed'}}><div><span>ทั้งหมด</span><strong>{value(items.length)}</strong><span>ครั้ง</span></div></div>{updatedAt&&<ul className="response-legend">{Object.entries(counts).filter(([,count])=>count>0).map(([key,count])=><li key={key}><span className="response-legend__dot" style={{background:colors[key]}}/>{outcomeLabels[key]} ({count})</li>)}</ul>}</article>
-      <article className="campaign-progress-card report-explanation"><h2>ติดตามคำตอบที่ยังไม่ครบ</h2><p><strong>{value(counts.UNDETERMINED)}</strong> สายยังไม่มีข้อสรุป</p><p>“จบสาย” เป็นสถานะการโทร ส่วนคำตอบว่าตกลงหรือปฏิเสธจะแสดงเมื่อ Agent ส่งผลหรือคุณบันทึกผลที่ตรวจสอบแล้ว</p><p className="workspace-note">เปิดรายละเอียดสายเพื่อตรวจผลจากบริการ และดูประวัติทุกครั้งของผู้ติดต่อ</p><Button size="compact" href={routes.campaigns}>ไปยังแคมเปญ</Button></article>
+      <article className="response-card report-response"><h2>ผลตอบรับจากการโทร</h2><div className="report-donut" role="img" aria-label={updatedAt?Object.entries(counts).map(([key,count])=>`${displayLabels[key]} ${count}`).join(', '):'ยังไม่มีข้อมูล'} style={{background:segments.length?`conic-gradient(${segments.join(', ')})`:'#e6e7ed'}}><div><span>ทั้งหมด</span><strong>{value(items.length)}</strong><span>ครั้ง</span></div></div>{updatedAt&&<ul className="response-legend">{Object.entries(counts).filter(([,count])=>count>0).map(([key,count])=><li key={key}><span className="response-legend__dot" style={{background:colors[key]}}/>{displayLabels[key]} ({count})</li>)}</ul>}</article>
+      <article className="campaign-progress-card report-explanation"><h2>ติดตามคำตอบที่ยังไม่ครบ</h2><p><strong>{value(counts.UNDETERMINED)}</strong> สายรอตรวจสอบ · <strong>{value(counts.ENDED_WITHOUT_RESULT)}</strong> สายจบแล้วไม่มีผลตอบรับ (ตัดสาย)</p><p>จบสายแล้วไม่มีผลตอบรับจะแสดง “ตัดสาย” ส่วนโทรไม่สำเร็จหรือไม่มีผู้รับจะแสดง “ไม่รับสาย” ตามเงื่อนไขเดียวกับหน้าแคมเปญ</p><p className="workspace-note">เปิดรายละเอียดสายเพื่อตรวจผลจากบริการ และดูประวัติทุกครั้งของผู้ติดต่อ</p><Button size="compact" href={routes.campaigns}>ไปยังแคมเปญ</Button></article>
     </section>
     <section className="activity-section" aria-labelledby="recent-activity-title"><h2 id="recent-activity-title">ประวัติการโทรจากแคมเปญ</h2><p className="workspace-note">เรียงครั้งล่าสุดก่อน แยกสถานะสายออกจากคำตอบของผู้รับ</p>
-      <label className="results-filter">ผลตอบรับ<select className="workspace-select" value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="all">ทุกผลตอบรับ</option>{Object.entries(outcomeLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-      {loading&&!updatedAt?<p role="status">กำลังโหลดประวัติ…</p>:!updatedAt?<p>ยังแสดงประวัติไม่ได้ กรุณาลองรีเฟรชข้อมูล</p>:!visible.length?<p className="workspace-note">ไม่พบประวัติการโทรตามตัวกรองนี้ เลือกทุกแคมเปญหรือขยายช่วงเวลาเพื่อดูรายการอื่น</p>:<div className="csv-preview"><table><thead><tr><th>ผู้ติดต่อ</th><th>แคมเปญ</th><th>เวลาส่งคำขอ</th><th>สถานะสาย</th><th>ผลตอบรับ</th><th>เจ้าหน้าที่</th><th>รายละเอียด</th></tr></thead><tbody>{visible.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE).map(a=>{
-        const result=effectiveOutcome(a.response), campaign=campaigns.find(c=>c.id===a.metadata.campaign_id);
-        return <tr key={a.id}><td><strong>{a.metadata.variables?.applicant_name||a.metadata.variables?.guest_name||a.metadata.variables?.name||a.destination}</strong><div>{a.destination}</div></td><td>{campaign?.name||a.metadata.campaign_name||'แคมเปญที่ไม่มีในรายการปัจจุบัน'}{Number.isInteger(a.metadata.contact_row)&&<small className="result-date">แถว {a.metadata.contact_row!+1}</small>}</td><td>{displayDate(a.created_at)}</td><td><span className="result-badge">{labels[a.status]||'รอตรวจสอบ'}</span></td><td><span className="result-badge" data-result={result.call_result}>{outcomeLabels[result.call_result]||'รอตรวจสอบ'}</span><small className="result-date">{sourceLabel(result.source)}</small></td><td>{result.needs_agent===null?'ยังไม่ทราบ':result.needs_agent?'ต้องการ':'ไม่ต้องการ'}</td><td>{campaign?<Button size="compact" variant="secondary" href={`${routes.campaignCall(campaign.id)}&request=${encodeURIComponent(a.id)}#call-results`}>ดูรายละเอียดสาย</Button>:<small>แคมเปญนี้ไม่อยู่ในรายการที่บันทึกแล้ว</small>}</td></tr>;
+      <label className="results-filter">ผลตอบรับ<select className="workspace-select" value={filter} onChange={e=>{setFilter(e.target.value);setPage(0);}}><option value="all">ทุกผลตอบรับ</option>{Object.entries(displayLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+      {loading&&!updatedAt?<p role="status">กำลังโหลดประวัติ…</p>:!updatedAt?<p>ยังแสดงประวัติไม่ได้ กรุณาลองรีเฟรชข้อมูล</p>:!visible.length?<p className="workspace-note">ไม่พบประวัติการโทรตามตัวกรองนี้ เลือกทุกแคมเปญหรือขยายช่วงเวลาเพื่อดูรายการอื่น</p>:<div className="csv-preview"><table><thead><tr><th>ผู้ติดต่อ</th><th>แคมเปญ</th><th>เวลาส่งคำขอ</th><th>สถานะสาย</th><th>ระยะเวลาคุย</th><th>ผลตอบรับ</th><th>เจ้าหน้าที่</th><th>รายละเอียด</th></tr></thead><tbody>{visible.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE).map(a=>{
+        const result=effectiveOutcome(a.response), display=callResultDisplay(a), campaign=campaigns.find(c=>c.id===a.metadata.campaign_id);
+        return <tr key={a.id}><td><strong>{a.metadata.variables?.applicant_name||a.metadata.variables?.guest_name||a.metadata.variables?.name||a.destination}</strong><div>{a.destination}</div></td><td>{campaign?.name||a.metadata.campaign_name||'แคมเปญที่ไม่มีในรายการปัจจุบัน'}{Number.isInteger(a.metadata.contact_row)&&<small className="result-date">แถว {a.metadata.contact_row!+1}</small>}</td><td>{displayDate(a.created_at)}</td><td><span className="result-badge">{labels[a.status]||'รอตรวจสอบ'}</span></td><td>{talkDuration(a)}</td><td><span className="result-badge" data-result={display.key}>{display.label}</span><small className="result-date">{display.note || sourceLabel(result.source)}</small></td><td>{result.needs_agent===null?'ยังไม่ทราบ':result.needs_agent?'ต้องการ':'ไม่ต้องการ'}</td><td>{campaign?<Button size="compact" variant="secondary" href={`${routes.campaignCall(campaign.id)}&request=${encodeURIComponent(a.id)}#call-results`}>ดูรายละเอียดสาย</Button>:<small>แคมเปญนี้ไม่อยู่ในรายการที่บันทึกแล้ว</small>}</td></tr>;
       })}</tbody></table></div>}
       {updatedAt&&<nav className="pagination" aria-label="หน้าประวัติการโทร"><p>{visible.length} ครั้ง</p><div className="pagination__controls"><button type="button" disabled={page===0} onClick={()=>setPage(p=>p-1)}>ย้อนกลับ</button><span aria-live="polite">หน้า {page+1} / {pages}</span><button type="button" disabled={page+1>=pages} onClick={()=>setPage(p=>p+1)}>ถัดไป</button></div></nav>}
     </section>
